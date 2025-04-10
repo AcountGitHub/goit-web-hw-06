@@ -1,6 +1,8 @@
-import sqlite3
+import logging
 from faker import Faker
 from random import randint
+from connect_sqlite import create_connection
+from sqlite3 import DatabaseError
 
 
 NUMBER_GROUPS = 3
@@ -38,7 +40,7 @@ def generate_fake_data(number_groups, number_teachers, number_students,
 
     # Generate fake dates
     for _ in range(number_grades):
-        fake_dates.append(fake_data.date_this_decade())
+        fake_dates.append(fake_data.date_this_decade().strftime("%Y-%m-%d"))
 
     return fake_groups, fake_teachers, fake_students, fake_subjects, fake_dates
 
@@ -73,47 +75,58 @@ def prepare_data(groups, teachers, students, subjects, dates) -> tuple:
     return for_groups, for_teachers, for_students, for_subjects, for_grades
 
 
+def insert_data(conn, sql_expression: str, data):
+    c = conn.cursor()
+    try:
+        c.executemany(sql_expression, data)
+        conn.commit()
+    except DatabaseError as e:
+        logging.error(e)
+        conn.rollback()
+    finally:
+        c.close()
+
+
 def insert_data_to_db(groups, teachers, students, subjects, grades) -> None:
     # Create a connection to our database and get a cursor object for data manipulation
+    try:
+        with create_connection() as con:
 
-    with sqlite3.connect('student_grades.sqlite') as con:
+            cur = con.cursor()
 
-        cur = con.cursor()
+            sql_to_groups = """INSERT INTO groups(name) VALUES (?)"""
 
-        sql_to_groups = """INSERT INTO groups(name) VALUES (?)"""
+            '''To insert all the data at once, we will use the executemany cursor method.
+            The first parameter will be the script text, and the second will be the data
+            (a list of tuples).'''
 
-        '''To insert all the data at once, we will use the executemany cursor method.
-        The first parameter will be the script text, and the second will be the data
-        (a list of tuples).'''
+            insert_data(con, sql_to_groups, groups)
 
-        cur.executemany(sql_to_groups, groups)
+            sql_to_teachers = """INSERT INTO teachers(fullname) VALUES (?)"""
 
-        sql_to_teachers = """INSERT INTO teachers(fullname) VALUES (?)"""
+            insert_data(con, sql_to_teachers, teachers)
 
-        cur.executemany(sql_to_teachers, teachers)
+            # Insert student data
 
-        # Insert student data
+            sql_to_students = """INSERT INTO students(fullname, group_id)
+                                  VALUES (?, ?)"""
 
-        sql_to_students = """INSERT INTO students(fullname, group_id)
-                               VALUES (?, ?)"""
+            # The data has been prepared in advance, so we just pass it to the function
 
-        # The data has been prepared in advance, so we just pass it to the function
+            insert_data(con, sql_to_students, students)
 
-        cur.executemany(sql_to_students, students)
+            sql_to_subjects = """INSERT INTO subjects(name, teacher_id)
+                                  VALUES (?, ?)"""
 
-        sql_to_subjects = """INSERT INTO subjects(name, teacher_id)
-                              VALUES (?, ?)"""
+            insert_data(con, sql_to_subjects, subjects)
 
-        cur.executemany(sql_to_subjects, subjects)
+            sql_to_grades = """INSERT INTO grades(student_id, subject_id, grade, grade_date)
+                                VALUES (?, ?, ?, ?)"""
 
-        sql_to_grades = """INSERT INTO grades(student_id, subject_id, grade, grade_date)
-                              VALUES (?, ?, ?, ?)"""
+            insert_data(con, sql_to_grades, grades)
 
-        cur.executemany(sql_to_grades, grades)
-
-        # Commit our changes to the database
-
-        con.commit()
+    except RuntimeError as err:
+        logging.error(err)
 
 
 if __name__ == "__main__":

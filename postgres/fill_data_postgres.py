@@ -1,8 +1,8 @@
 import logging
-import psycopg2
 from faker import Faker
 from random import randint
-from contextlib import contextmanager
+from connect_postgres import create_connection
+from psycopg2 import DatabaseError
 
 
 NUMBER_GROUPS = 3
@@ -10,18 +10,6 @@ NUMBER_STUDENTS = 50
 NUMBER_TEACHERS = 5
 NUMBER_SUBJECTS = 8
 NUMBER_GRADES = 1000  # NUMBER_STUDENTS*20
-
-
-@contextmanager
-def create_connection():
-    try:
-        """ create a database connection to database """
-        conn = psycopg2.connect(host="localhost", port="5432", database="student_grades",
-                                user="postgres", password="pass")
-        yield conn
-        conn.close()
-    except psycopg2.OperationalError as err:
-        raise RuntimeError(f"Failed to create database connection {err}")
 
 
 def generate_fake_data(number_groups, number_teachers, number_students,
@@ -52,7 +40,7 @@ def generate_fake_data(number_groups, number_teachers, number_students,
 
     # Generate fake dates
     for _ in range(number_grades):
-        fake_dates.append(fake_data.date_this_decade())
+        fake_dates.append(fake_data.date_this_decade().strftime("%Y-%m-%d"))
 
     return fake_groups, fake_teachers, fake_students, fake_subjects, fake_dates
 
@@ -92,7 +80,7 @@ def insert_data(conn, sql_expression: str, data):
     try:
         c.executemany(sql_expression, data)
         conn.commit()
-    except psycopg2.DatabaseError as e:
+    except DatabaseError as e:
         logging.error(e)
         conn.rollback()
     finally:
